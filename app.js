@@ -59,7 +59,7 @@ app.get('/changed', async function( req, res ) {
           ${ to ? `FILTER( ?date <= ${sparqlEscapeDateTime(to) })` : "" }
         }
       } ORDER BY DESC(?date)
-     `);
+     `, { sudo: true });
       res
         .status(200)
         .send( bindingsAsCsv(response.results.bindings) );
@@ -173,7 +173,7 @@ app.get('/baskets', async function( req, res ) {
               }
             }
           } ORDER BY ?deliveryType ?deliveryPlace ?user ?basket ?plu
-     `);
+     `, { sudo: true });
       res
         .status(200)
         .send( bindingsAsCsv(response.results.bindings) );
