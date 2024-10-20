@@ -1,0 +1,26 @@
+{
+  "name": "export-orders-service",
+  "version": "0.0.1",
+  "description": "Exports orders for the Veeakker Webshop",
+  "main": "app.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/veeakker/export-orders-service.git"
+  },
+  "keywords": [
+    "mu-service"
+  ],
+  "author": "Aad Versteden <madnificent@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/veeakker/export-orders-service/issues"
+  },
+  "homepage": "https://github.com/veeakker/export-orders-service#readme",
+  "dependencies": {
+    "export-to-csv": "^1.4.0"
+  }
+}
