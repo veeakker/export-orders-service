@@ -72,7 +72,7 @@ app.get('/changed', async function( req, res ) {
 });
 
 app.get('/baskets', async function( req, res ) {
-  if( isAdminUser(req) ) {
+  if( await isAdminUser(req) ) {
     try {
       const { from, to } = reqDates( req );
       const basketStatus = req.query.status
@@ -181,6 +181,12 @@ app.get('/baskets', async function( req, res ) {
     } catch (e) {
     console.log(e);
     }
+  } else {
+    console.error("Not an admin user, cannot make export");
+    res
+      .status(403)
+      .send(JSON.stringify(
+        {errors: [{code: "403", message: "Forbidden, not administrator"}]}))
   }
 } );
 
