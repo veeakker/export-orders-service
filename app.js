@@ -90,7 +90,7 @@ app.get('/baskets', async function( req, res ) {
         PREFIX gr: <http://purl.org/goodrelations/v1#>
         PREFIX adms: <http://www.w3.org/ns/adms#>
   
-        SELECT DISTINCT ?plu ?aantalPakjes ?totalPrice (?pStuks AS ?besteldStuks) (?pGrm AS ?besteldGram) ?basket (CONCAT(?firstName, " ", ?lastName) AS ?name) ?address ?phone ?email ?streetAddress ?postalCode ?locality ?user ?lastChange ?hasCustomDeliveryPlace ?deliveryType ?deliveryPlace ?orderLine
+        SELECT DISTINCT ?plu ?aantalPakjes (?pStuks AS ?besteldStuks) (?pGrm AS ?besteldGram) ?basket (CONCAT(?firstName, " ", ?lastName) AS ?name) ?address ?phone ?email ?streetAddress ?postalCode ?locality ?user ?lastChange ?hasCustomDeliveryPlace ?deliveryType ?deliveryPlace ?orderLine ?comment ?totalPrice
         WHERE {
           GRAPH ?g {
             ?basket mu:uuid ?basketUuid;
@@ -102,6 +102,7 @@ app.get('/baskets', async function( req, res ) {
             ?orderLine veeakker:amount ?aantalPakjes.
             ?orderLine veeakker:hasOffering ?offering.
             OPTIONAL { ?basket veeakker:invoiceAddress ?invoiceAddress. }
+            OPTIONAL { ?orderLine veeakker:customerComment ?comment }
             {
               FILTER( bound( ?invoiceAddress ) )
               ?basket veeakker:invoiceAddress ?address.
