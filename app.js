@@ -18,24 +18,23 @@ const BASKET_STATUS_MAPPING = {
 /**
  * Converts query bindings to a raw csv table
  */
-function bindingsAsCsv(bindings) {
-  if( bindings.length > 0 ) {
-    const unpackedBindings =
-      bindings
-        .map((binding) => {
-          const unpacked = {};
-          for( let key in binding ) {
-            unpacked[key] = binding[key].value;
-          }
-          return unpacked;
-        });
+function queryAnswerAsCsv(queryResult) {
+  const bindings = queryResult.results.bindings;
+  const headers = queryResult.head.vars;
+  const unpackedBindings =
+    bindings
+      .map((binding) => {
+        const unpacked = {};
+        for( let key in binding ) {
+          unpacked[key] = binding[key].value;
+        }
+        return unpacked;
+      });
 
-    const csvConfig = mkConfig({ useKeysAsHeaders: true });
-    const generator = generateCsv(csvConfig);
-    return asString( generator(unpackedBindings) );
-  } else {
-    return "";
-  }
+  let csvConfig =
+    mkConfig({ columnHeaders: headers  });
+  const generator = generateCsv(csvConfig);
+  return asString( generator(unpackedBindings) );
 }
 
 app.get('/changed', async function( req, res ) {
@@ -62,7 +61,7 @@ app.get('/changed', async function( req, res ) {
      `, { sudo: true });
       res
         .status(200)
-        .send( bindingsAsCsv(response.results.bindings) );
+        .send( queryAnswerAsCsv(response) );
     } catch (e) {
       console.log(e);
     }
@@ -177,7 +176,7 @@ app.get('/baskets', async function( req, res ) {
      `, { sudo: true });
       res
         .status(200)
-        .send( bindingsAsCsv(response.results.bindings) );
+        .send( queryAnswerAsCsv(response) );
     } catch (e) {
     console.log(e);
     }
