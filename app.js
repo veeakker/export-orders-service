@@ -1,7 +1,7 @@
 // import { query } from 'mu';emtech/mu-javascript-template for more info
 import { app, query, errorHandler, sparqlEscapeDateTime, sparqlEscapeUri } from 'mu';
-import { mkConfig, generateCsv, asString } from "export-to-csv";
 import { isAdminUser } from './lib/authorization'
+import queryAnswerAsCsv from './lib/query-answer-as-csv';
 
 function reqDates(req) {
   return {
@@ -14,28 +14,6 @@ const BASKET_STATUS_MAPPING = {
   draft: "http://veeakker.be/order-statuses/draft",
   confirmed: "http://veeakker.be/order-statuses/confirmed"
 };
-
-/**
- * Converts query bindings to a raw csv table
- */
-function queryAnswerAsCsv(queryResult) {
-  const bindings = queryResult.results.bindings;
-  const headers = queryResult.head.vars;
-  const unpackedBindings =
-    bindings
-      .map((binding) => {
-        const unpacked = {};
-        for( let key in binding ) {
-          unpacked[key] = binding[key].value;
-        }
-        return unpacked;
-      });
-
-  let csvConfig =
-    mkConfig({ columnHeaders: headers  });
-  const generator = generateCsv(csvConfig);
-  return asString( generator(unpackedBindings) );
-}
 
 app.get('/changed', async function( req, res ) {
   // Yields the baskets which have changed status
