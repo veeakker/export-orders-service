@@ -1,6 +1,6 @@
 {
   "name": "export-orders-service",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "description": "Exports orders for the Veeakker Webshop",
   "main": "app.js",
   "type": "module",
