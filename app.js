@@ -66,7 +66,27 @@ app.get('/baskets', async function( req, res ) {
         PREFIX gr: <http://purl.org/goodrelations/v1#>
         PREFIX adms: <http://www.w3.org/ns/adms#>
   
-        SELECT DISTINCT ?plu ?aantalPakjes (?pStuks AS ?besteldStuks) (?pGrm AS ?besteldGram) ?basket (CONCAT(?firstName, " ", ?lastName) AS ?name) ?address ?phone ?email ?streetAddress ?postalCode ?locality ?user ?lastChange ?hasCustomDeliveryPlace ?deliveryType ?deliveryPlace ?orderLine ?comment ?totalPrice
+        SELECT DISTINCT
+          ?plu
+          ?aantalPakjes
+          (?pStuks AS ?besteldStuks)
+          (?pGrm AS ?besteldGram)
+          ?basket
+          (CONCAT(?firstName, " ", ?lastName) AS ?name)
+          ?address
+          ?phone
+          ?email
+          ?streetAddress
+          ?postalCode
+          ?locality
+          ?user
+          ?lastChange
+          ?hasCustomDeliveryPlace
+          ?deliveryType
+          ?deliveryPlace
+          ?orderLine
+          ?comment
+          ?totalPrice
         WHERE {
           GRAPH ?g {
             ?basket mu:uuid ?basketUuid;
