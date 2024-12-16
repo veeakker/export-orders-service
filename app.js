@@ -1,4 +1,3 @@
-// import { query } from 'mu';emtech/mu-javascript-template for more info
 import { app, query, errorHandler, sparqlEscapeDateTime, sparqlEscapeUri } from 'mu';
 import { isAdminUser } from './lib/authorization'
 import queryAnswerAsCsv from './lib/query-answer-as-csv';
