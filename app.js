@@ -1,6 +1,6 @@
 import { app, query, errorHandler, sparqlEscapeDateTime, sparqlEscapeUri } from 'mu';
 import { isAdminUser } from './lib/authorization'
-import queryAnswerAsCsv from './lib/query-answer-as-csv';
+import queryAnswerAsCsv, { bindingsAndHeadersAsCsv } from './lib/query-answer-as-csv';
 
 function reqDates(req) {
   return {
@@ -20,22 +20,10 @@ app.get('/changed', async function( req, res ) {
     try {
       const { from, to } = reqDates( req );
       // TODO: accept various ways of supplying delivery information
-      const response = await query(`
-      PREFIX veeakker: <http://veeakker.be/vocabularies/shop/>
-      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+      const response = await basketsWithStatus({
+        from, to, status: null
+      });
 
-      SELECT DISTINCT ?graph ?basket ?date ?status
-      WHERE {
-        GRAPH ?graph {
-          ?basket
-            a veeakker:Basket;
-            veeakker:statusChangedAt ?date;
-            veeakker:basketOrderStatus ?status.
-          ${ from ? `FILTER( ?date >= ${sparqlEscapeDateTime(from)} )` : "" }
-          ${ to ? `FILTER( ?date <= ${sparqlEscapeDateTime(to) })` : "" }
-        }
-      } ORDER BY DESC(?date)
-     `, { sudo: true });
       res
         .status(200)
         .send( queryAnswerAsCsv(response) );
@@ -47,6 +35,242 @@ app.get('/changed', async function( req, res ) {
   }
 });
 
+async function basketsWithStatus( { status, from, to } ) {
+  try {
+    return await query(`
+      PREFIX veeakker: <http://veeakker.be/vocabularies/shop/>
+      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+      SELECT DISTINCT ?graph ?basket (?date AS ?lastChange) ?status
+      WHERE {
+        GRAPH ?graph {
+          ${ status ? `VALUES ?status { ${sparqlEscapeUri( status )} }` : "" }
+          ?basket
+            a veeakker:Basket;
+            veeakker:statusChangedAt ?date;
+            veeakker:basketOrderStatus ?status.
+          ${ from ? `FILTER( ?date >= ${sparqlEscapeDateTime(from)} )` : "" }
+          ${ to ? `FILTER( ?date <= ${sparqlEscapeDateTime(to) })` : "" }
+        }
+      } ORDER BY DESC(?date)`,
+      { sudo: true });
+  } catch (e) {
+      console.log(e);
+  }
+}
+
+async function basketUserInfo( basket, graph ) {
+  // TODO: should we split up the user info from the delivery info?  That might make reading in the data more obvious
+  // towards import too because we could register a standard place for order separately from the how the specific order
+  // was made.  This may give us liberty in how to support users in the future (automatically selecting, asking, ...).
+  // These two data points seem to differ regardles.
+
+  // If a basket was orderedBy a foaf:Person, then we should consider the person's address.  Otherwise we should
+  // consider the invoiceAddress as the address for the user who ordered the basket.
+
+  // Delivery place may also be hasCustomDeliveryPlace in which case the delivery place should override the address.  We
+  // can fetch both in this case and select the custom delivery place in cases where that wins.
+
+  console.log(`Calling for ${basket} ${graph}`);
+
+  // 1. logged in user info
+  const loggedInUserAnswer = (await query(`
+    PREFIX veeakker: <http://veeakker.be/vocabularies/shop/>
+    PREFIX mu: <http://mu.semte.ch/vocabularies/core/>
+    PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+    PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+    PREFIX schema: <http://schema.org/>
+    PREFIX ext: <http://mu.semte.ch/vocabularies/ext/>
+    PREFIX gr: <http://purl.org/goodrelations/v1#>
+    PREFIX adms: <http://www.w3.org/ns/adms#>
+
+    SELECT DISTINCT
+      (CONCAT(?firstName, " ", ?lastName) AS ?name)
+      ?address
+      ?phone
+      ?email
+      ?streetAddress
+      ?postalCode
+      ?locality
+      ?user
+    WHERE {
+      GRAPH ${sparqlEscapeUri(graph)} {
+        VALUES ?basket { ${sparqlEscapeUri( basket )} }
+        ?user veeakker:hasBasket ?basket.
+        ?user
+          (foaf:email | schema:email) ?email; # TODO: convert to schema
+          foaf:firstName ?firstName;
+          foaf:lastName ?lastName;
+          foaf:phone ?phone.
+        ?user schema:postalAddress ?address.
+        ?address
+          schema:addressLocality ?locality;
+          schema:postalCode ?postalCode;
+          schema:streetAddress ?streetAddress.
+        }
+      }
+   `, { sudo: true })).results.bindings
+
+  if( loggedInUserAnswer.length > 1 ) {
+    console.warn(`Found more than one user info result for basket ${basket} and graph ${graph}, using first result.`);
+  }
+
+  // 2. guest user info
+  const invoiceAddressAnswer = (await query(`
+    PREFIX veeakker: <http://veeakker.be/vocabularies/shop/>
+    PREFIX mu: <http://mu.semte.ch/vocabularies/core/>
+    PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+    PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+    PREFIX schema: <http://schema.org/>
+    PREFIX ext: <http://mu.semte.ch/vocabularies/ext/>
+    PREFIX gr: <http://purl.org/goodrelations/v1#>
+    PREFIX adms: <http://www.w3.org/ns/adms#>
+
+    SELECT DISTINCT
+      (CONCAT(?firstName, " ", ?lastName) AS ?name)
+      ?userAddress
+      ?phone
+      ?email
+      ?streetAddress
+      ?postalCode
+      ?locality
+      ?companyInfo
+    WHERE {
+      GRAPH ${sparqlEscapeUri(graph)} {
+        VALUES ?basket { ${sparqlEscapeUri( basket )} }
+        ?basket veeakker:invoiceAddress ?userAddress.
+        ?userAddress
+          schema:email ?email;
+          foaf:firstName ?firstName;
+          foaf:lastName ?lastName;
+          foaf:phone ?phone.
+        ?userAddress schema:hasAddress ?address.
+        ?address
+          schema:addressLocality ?locality;
+          schema:postalCode ?postalCode;
+          schema:streetAddress ?streetAddress.
+        OPTIONAL {
+          ?userAddress ext:companyInfo ?companyInfo.
+        }
+      }
+      FILTER NOT EXISTS { ?user veeakker:hasBasket ?basket; a foaf:Person. }
+    }
+  `, { sudo: true })).results.bindings;
+
+  // 3. custom delivery place // TODO: this probably belongs elsewhere
+  const customDeliveryAddressAnswer = (await query(`
+    PREFIX veeakker: <http://veeakker.be/vocabularies/shop/>
+    PREFIX mu: <http://mu.semte.ch/vocabularies/core/>
+    PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+    PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+    PREFIX schema: <http://schema.org/>
+    PREFIX ext: <http://mu.semte.ch/vocabularies/ext/>
+    PREFIX gr: <http://purl.org/goodrelations/v1#>
+    PREFIX adms: <http://www.w3.org/ns/adms#>
+
+    SELECT DISTINCT
+      (CONCAT(?firstName, " ", ?lastName) AS ?name)
+      ?deliveryAddress
+      ?phone
+      ?email
+      ?streetAddress
+      ?postalCode
+      ?locality
+      ?user
+      ?companyInfo
+    WHERE {
+      GRAPH ${sparqlEscapeUri(graph)} {
+        VALUES ?basket { ${sparqlEscapeUri( basket )} }
+        ?basket veeakker:hasCustomDeliveryPlace ?hasCustomDeliveryPlace.
+        ?basket veeakker:deliveryAddress ?deliveryAddress.
+        ?deliveryAddress
+          schema:email ?email;
+          foaf:firstName ?firstName;
+          foaf:lastName ?lastName;
+          foaf:phone ?phone.
+        ?deliveryAddress schema:hasAddress ?address.
+
+        ?address
+          schema:addressLocality ?locality;
+          schema:postalCode ?postalCode;
+          schema:streetAddress ?streetAddress.
+
+        OPTIONAL {
+          ?deliveryAddress ext:companyInfo ?companyInfo.
+        }
+      }
+      FILTER (?hasCustomDeliveryPlace)
+    }
+  `, { sudo: true })).results.bindings;
+
+  // 4. combine the results
+  console.log( {
+    loggedInUserAnswer, invoiceAddressAnswer, customDeliveryAddressAnswer
+  } );
+
+  return {
+    loggedInUserAnswer, invoiceAddressAnswer, customDeliveryAddressAnswer
+  }
+}
+
+async function basketOrderLines( basket, graph ) {
+  const response = await query(`
+    PREFIX veeakker: <http://veeakker.be/vocabularies/shop/>
+    PREFIX mu: <http://mu.semte.ch/vocabularies/core/>
+    PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+    PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+    PREFIX schema: <http://schema.org/>
+    PREFIX ext: <http://mu.semte.ch/vocabularies/ext/>
+    PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+    PREFIX gr: <http://purl.org/goodrelations/v1#>
+    PREFIX adms: <http://www.w3.org/ns/adms#>
+
+    SELECT DISTINCT
+      ?plu
+      ?aantalPakjes
+      ?totalPrice
+      (?pStuks AS ?besteldStuks)
+      (?pGrm AS ?besteldGram)
+      ?basket
+      ?comment
+    WHERE {
+      VALUES ?basket { ${sparqlEscapeUri(basket)} }
+      GRAPH ${sparqlEscapeUri(graph)} {
+        ?basket veeakker:orderLine ?orderLine.
+        ?orderLine veeakker:amount ?aantalPakjes.
+        ?orderLine veeakker:hasOffering ?offering.
+        OPTIONAL { ?orderLine veeakker:customerComment ?comment }
+      }
+      GRAPH <http://mu.semte.ch/graphs/public> {
+        ?offering gr:hasPriceSpecification ?priceSpecification.
+        ?offering gr:includesObject ?typeAndQuantity.
+        ?priceSpecification gr:hasCurrencyValue ?totalPrice.
+        ?typeAndQuantity gr:typeOfGood ?product.
+        ?product adms:identifier ?plu.
+
+        OPTIONAL {
+          ?typeAndQuantity
+          gr:hasUnitOfMeasurement "KGM";
+          gr:amountOfThisGood ?pKg.
+          BIND ( ?pKg * 1000 AS ?pGrm )
+        }
+        OPTIONAL {
+          ?typeAndQuantity
+          gr:hasUnitOfMeasurement "C62";
+          gr:amountOfThisGood ?pStuks.
+        }
+        OPTIONAL {
+          ?typeAndQuantity
+          gr:hasUnitOfMeasurement "GRM";
+          gr:amountOfThisGood ?pGrm.
+        }
+      }
+    }
+  `, { sudo: true });
+
+  return response.results.bindings;
+}
+
 app.get('/baskets', async function( req, res ) {
   if( await isAdminUser(req) ) {
     try {
@@ -55,125 +279,35 @@ app.get('/baskets', async function( req, res ) {
         ? BASKET_STATUS_MAPPING[req.query.status]
         : BASKET_STATUS_MAPPING["confirmed"];
 
-      const response = await query(`
-        PREFIX veeakker: <http://veeakker.be/vocabularies/shop/>
-        PREFIX mu: <http://mu.semte.ch/vocabularies/core/>
-        PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-        PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-        PREFIX schema: <http://schema.org/>
-        PREFIX ext: <http://mu.semte.ch/vocabularies/ext/>
-        PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-        PREFIX gr: <http://purl.org/goodrelations/v1#>
-        PREFIX adms: <http://www.w3.org/ns/adms#>
-  
-        SELECT DISTINCT
-          ?plu
-          ?aantalPakjes
-          (?pStuks AS ?besteldStuks)
-          (?pGrm AS ?besteldGram)
-          ?basket
-          (CONCAT(?firstName, " ", ?lastName) AS ?name)
-          ?address
-          ?phone
-          ?email
-          ?streetAddress
-          ?postalCode
-          ?locality
-          ?user
-          ?lastChange
-          ?hasCustomDeliveryPlace
-          ?deliveryType
-          ?deliveryPlace
-          ?orderLine
-          ?comment
-          ?totalPrice
-        WHERE {
-          GRAPH ?g {
-            ?basket mu:uuid ?basketUuid;
-              veeakker:basketOrderStatus ${sparqlEscapeUri(basketStatus)};
-              veeakker:statusChangedAt ?date.
-            ${ from ? `FILTER( ?date >= ${sparqlEscapeDateTime(from)})` : "" }
-            ${ to ? `FILTER( ?date <= ${sparqlEscapeDateTime(to)})` : "" }
-            ?basket veeakker:orderLine ?orderLine.
-            ?orderLine veeakker:amount ?aantalPakjes.
-            ?orderLine veeakker:hasOffering ?offering.
-            OPTIONAL { ?basket veeakker:invoiceAddress ?invoiceAddress. }
-            OPTIONAL { ?orderLine veeakker:customerComment ?comment }
-            {
-              FILTER( bound( ?invoiceAddress ) )
-              ?basket veeakker:invoiceAddress ?address.
-              OPTIONAL {
-                ?address
-                  foaf:firstName ?firstName;
-                  foaf:lastName ?lastName;
-                  foaf:phone ?phone;
-                  schema:email ?email;
-                  schema:hasAddress ?postal.
-                ?postal
-                  schema:addressLocality ?locality;
-                  schema:postalCode ?postalCode;
-                  schema:streetAddress ?streetAddress.
-                OPTIONAL { ?address ext:companyInfo ?company. }
-              }
-            } UNION {
-              FILTER( ! bound( ?invoiceAddress ) )
-              ?user veeakker:hasBasket ?basket.
-              OPTIONAL {
-                ?user
-                  (foaf:email | schema:email) ?email; # TODO: convert to schema
-                  foaf:firstName ?firstName;
-                  foaf:lastName ?lastName;
-                  foaf:phone ?phone.
-              }
-              OPTIONAL {
-                ?user schema:postalAddress ?address.
-                ?address
-                  schema:addressLocality ?locality;
-                  schema:postalCode ?postalCode;
-                  schema:streetAddress ?streetAddress.
-                }
-              }
-              OPTIONAL {
-                ?basket veeakker:statusChangedAt ?lastChange.
-              }
-              OPTIONAL {
-                ?basket veeakker:hasCustomDeliveryPlace ?hasCustomDeliveryPlace.
-              }
-              OPTIONAL {
-                ?basket veeakker:deliveryType ?deliveryType.
-              }
-              OPTIONAL {
-                ?basket veeakker:deliveryPlace ?deliveryPlace.
-              }
-            }
-            GRAPH <http://mu.semte.ch/graphs/public> {
-              ?offering gr:hasPriceSpecification ?priceSpecification.
-              ?offering gr:includesObject ?typeAndQuantity.
-              ?priceSpecification gr:hasCurrencyValue ?totalPrice.
-              ?typeAndQuantity gr:typeOfGood ?product.
-              ?product adms:identifier ?plu.
-              OPTIONAL {
-                ?typeAndQuantity
-                  gr:hasUnitOfMeasurement "KGM";
-                  gr:amountOfThisGood ?pKg.
-                BIND ( ?pKg * 1000 AS ?pGrm )
-              }
-              OPTIONAL {
-                ?typeAndQuantity
-                  gr:hasUnitOfMeasurement "C62";
-                  gr:amountOfThisGood ?pStuks.
-              }
-              OPTIONAL {
-                ?typeAndQuantity
-                  gr:hasUnitOfMeasurement "GRM";
-                  gr:amountOfThisGood ?pGrm.
-              }
-            }
-          } ORDER BY ?deliveryType ?deliveryPlace ?user ?basket ?plu
-     `, { sudo: true });
-      res
-        .status(200)
-        .send( queryAnswerAsCsv(response) );
+      const basketsResponse = await basketsWithStatus( from, to, basketStatus );
+      const allOrderLines = [];
+
+      for ( let basketInfo of basketsResponse.results.bindings ) {
+        // each basket
+        // find the user's information
+        let userInfo = basketUserInfo( basketInfo.basket.value, basketInfo.graph.value );
+        // find delivery information
+        let deliveryInfo = basketDeliveryInfo( basketInfo.basket.value, basketInfo.graph.value );
+        // collect orderlines
+        let orderLines = basketOrderLines( basketInfo.basket.value, basketInfo.graph.value );
+        joinResults( basketInfo, userInfo, deliveryInfo, orderLines )
+          .forEach( (line) => allOrderLines.push(line) )
+      }
+
+      // bindingsAndHeadersAsCsv( allOrderLines,
+      //   [
+      //     "plu",
+      //     "aantalPakjes", "besteldStuks", "besteldGram",
+      //     "basket",
+      //     "name", "address", "phone", "email", "streetAddress", "postalCode", "locality", "user",
+      //     "lastChange",
+      //     "hasCustomDeliveryPlace", "deliveryType", "deliveryPlace",
+      //     "orderLine", "comment", "totalPrice"
+      //   ] );
+
+      //  res
+      //    .status(200)
+      //    .send( queryAnswerAsCsv(response) );
     } catch (e) {
     console.log(e);
     }
