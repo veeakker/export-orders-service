@@ -137,7 +137,6 @@ async function basketDeliveryInfo( basket, graph ) {
     }
   `, { sudo: true })).results.bindings;
 
-  console.log( { customDeliveryAddressAnswer, selectedDeliveryPlaceAnswer } );
   return { customDeliveryAddressAnswer, selectedDeliveryPlaceAnswer };
 }
 
@@ -152,8 +151,6 @@ async function basketUserInfo( basket, graph ) {
 
   // Delivery place may also be hasCustomDeliveryPlace in which case the delivery place should override the address.  We
   // can fetch both in this case and select the custom delivery place in cases where that wins.
-
-  console.log(`Calling for ${basket} ${graph}`);
 
   // 1. logged in user info
   const loggedInUserAnswer = (await query(`
@@ -240,10 +237,6 @@ async function basketUserInfo( basket, graph ) {
   `, { sudo: true })).results.bindings;
 
   // 3. combine the results
-  console.log( {
-    loggedInUserAnswer, invoiceAddressAnswer
-  } );
-
   return {
     loggedInUserAnswer, invoiceAddressAnswer
   }
@@ -355,8 +348,6 @@ app.get('/baskets', async function( req, res ) {
           .forEach( (line) => allOrderLines.push(line) )
       }
 
-      console.log({allOrderLines});
-
       const fields = [
         "basket",
         "lastChange",
@@ -400,33 +391,5 @@ app.get('/baskets', async function( req, res ) {
         {errors: [{code: "403", message: "Forbidden, not administrator"}]}))
   }
 } );
-
-const monitoredBaskets = [{
-  basket: "http://veeakker.be/baskets/e8a2fe00-ee13-11ef-8ef3-9bd228564710",
-  graph: "http://mu.semte.ch/sessions/e8591c9a-ee13-11ef-9f59-0242ac170012",
-  label: "Anonymous"
-},{
-  basket: "http://veeakker.be/baskets/241ad4b0-ee2a-11ef-8ef3-9bd228564710",
-  graph: "http://mu.semte.ch/sessions/2407b63c-ee2a-11ef-a0fd-0242ac170012",
-  label: "Anonymous custom deliveryplace"
-},{
-  basket: "http://veeakker.be/baskets/19a2af20-187f-11ef-8b39-4b9115e3448f",
-  graph: "http://veeakker.be/people/146a2ab0-187f-11ef-89e6-db30b83ad484",
-  label: "Logged in"
-}];
-
-console.log( joinResults([{one: 1},{two: 2}, {three: 3}]) )
-console.log( joinResults([{one: 1},{two: 2}, {three: 3}], [{a: "a"}]) )
-console.log( joinResults([{one: 1},{two: 2}, {three: 3}], [{a: "a"}, {b: "b"}]) )
-
-for( let {basket, graph, label} of monitoredBaskets ) {
-  console.log( {label, info: await basketUserInfo(basket, graph)} );
-  console.log( {label, orderLines: await basketOrderLines(basket, graph)} );
-}
-
-console.log( joinResults([{one: 1},{two: 2}, {three: 3}]) )
-console.log( joinResults([{one: 1},{two: 2}, {three: 3}], [{a: "a"}]) )
-console.log( joinResults([{one: 1},{two: 2}, {three: 3}], [{a: "a"}, {b: "b"}]) )
-
 
 app.use(errorHandler);
