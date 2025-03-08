@@ -1,6 +1,7 @@
 import { app, query, errorHandler, sparqlEscapeDateTime, sparqlEscapeUri } from 'mu';
 import { isAdminUser } from './lib/authorization'
 import queryAnswerAsCsv, { bindingsAndHeadersAsCsv } from './lib/query-answer-as-csv';
+import joinResults from './lib/join-results';
 
 function reqDates(req) {
   return {
@@ -281,7 +282,7 @@ async function basketOrderLines( basket, graph ) {
         ?offering gr:includesObject ?typeAndQuantity.
         ?priceSpecification gr:hasCurrencyValue ?totalPrice.
         ?typeAndQuantity gr:typeOfGood ?product.
-        ?product adms:identifier ?plu.
+        OPTIONAL { ?product adms:identifier ?plu. }
 
         OPTIONAL {
           ?typeAndQuantity
@@ -306,24 +307,6 @@ async function basketOrderLines( basket, graph ) {
   return response.results.bindings;
 }
 
-/**
-  * Joins multiple arrays together by taking their cross product, joining all properties.
- * @param {Array} records Array of objects to be joined.
- * @param {Array<Array>} others Other arrays of objects to be joined.
- * @result {Array} Each combinedresult
- */
-function joinResults(records, ...others) {
-  if( others.length == 0 ) {
-    return records; // arg is an array and contains the sole results
-  } else {
-    let results = [];
-    for( let flattenedNestedRecord of joinResults( ...others ) )
-      for( let record of records )
-        results.push( Object.assign( {}, record, flattenedNestedRecord ) )
-    return results;
-  }
-}
-
 app.get('/baskets', async function( req, res ) {
   if( await isAdminUser(req) ) {
     try {
@@ -332,12 +315,12 @@ app.get('/baskets', async function( req, res ) {
         ? BASKET_STATUS_MAPPING[req.query.status]
         : BASKET_STATUS_MAPPING["confirmed"];
 
-      const basketsResponse = await basketsWithStatus( from, to, basketStatus );
+      const basketsResponse = await basketsWithStatus( { from, to, status: basketStatus } );
       const allOrderLines = [];
 
       for ( let basketInfo of basketsResponse.results.bindings ) {
         // each basket
-        let infoToCombine = [];
+        let infoToCombine = [[basketInfo]];
         // find the user's information
         let userInfo = await basketUserInfo( basketInfo.basket.value, basketInfo.graph.value );
         // find delivery information
@@ -361,7 +344,7 @@ app.get('/baskets', async function( req, res ) {
         if ( deliveryInfo.customDeliveryAddressAnswer.length > 1 )
           console.warn("Got more than one delivery info for ${basketInfo.basket.value} ${basketInfo.graph.value}");
 
-        if ( deliveryInfo.selectedDeliveryPlaceAnswer )
+        if ( deliveryInfo.selectedDeliveryPlaceAnswer.length )
           infoToCombine.push(deliveryInfo.selectedDeliveryPlaceAnswer)
         if ( deliveryInfo.selectedDeliveryPlaceAnswer.length > 1 )
           console.warn("Got more than one selected delivery address for ${basketInfo.basket.value} ${basketInfo.graph.value}");
@@ -372,31 +355,40 @@ app.get('/baskets', async function( req, res ) {
           .forEach( (line) => allOrderLines.push(line) )
       }
 
+      console.log({allOrderLines});
+
+      const fields = [
+        "basket",
+        "lastChange",
+        "status",
+        "deliveryType",
+        "deliveryPlaceUri",
+        "deliveryPlace",
+        "routeUri",
+        "route",
+        "user",
+        "name",
+        "userAddress",
+        "phone",
+        "email",
+        "streetAddress",
+        "postalCode",
+        "locality",
+        "companyInfo",
+        "deliveryAddress",
+        "address",
+        "companyInfo",
+        "plu",
+        "aantalPakjes",
+        "totalPrice",
+        "besteldStuks",
+        "besteldGram",
+        "comment"
+      ];
+
       res
         .status(200)
-        .send(bindingsAndHeadersAsCsv( allOrderLines, [
-          "deliveryType", "deliveryPlaceUri", "deliveryPlace", "routeUri", "route",
-          "name",
-          "userAddress",
-          "phone",
-          "email",
-          "streetAddress",
-          "postalCode",
-          "locality",
-          "companyInfo",
-          "address",
-          "user",
-          "deliveryType", "deliveryPlaceUri", "deliveryPlace", "routeUri", "route",
-          "deliveryAddress",
-          "companyInfo",
-          "plu",
-          "aantalPakjes",
-          "totalPrice",
-          "besteldStuks",
-          "besteldGram",
-          "basket",
-          "comment"
-        ]));
+        .send(bindingsAndHeadersAsCsv( allOrderLines, fields ));
     } catch (e) {
     console.log(e);
     }
