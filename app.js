@@ -112,6 +112,7 @@ async function basketDeliveryInfo( basket, graph ) {
       ?locality
       ?user
       ?companyInfo
+      ?hasCustomDeliveryPlace
     WHERE {
       GRAPH ${sparqlEscapeUri(graph)} {
         VALUES ?basket { ${sparqlEscapeUri( basket )} }
@@ -262,6 +263,7 @@ async function basketOrderLines( basket, graph ) {
       (?pGrm AS ?besteldGram)
       ?basket
       ?comment
+      ?orderLine
     WHERE {
       VALUES ?basket { ${sparqlEscapeUri(basket)} }
       GRAPH ${sparqlEscapeUri(graph)} {
@@ -349,32 +351,34 @@ app.get('/baskets', async function( req, res ) {
       }
 
       const fields = [
+        "plu",
+        "aantalPakjes",
+        "besteldStuks",
+        "besteldGram",
         "basket",
-        "lastChange",
-        "status",
-        "deliveryType",
-        "deliveryPlaceUri",
-        "deliveryPlace",
-        "routeUri",
-        "route",
-        "user",
         "name",
-        "userAddress",
+        "address",
         "phone",
         "email",
         "streetAddress",
         "postalCode",
         "locality",
-        "companyInfo",
-        "deliveryAddress",
-        "address",
-        "companyInfo",
-        "plu",
-        "aantalPakjes",
+        "user",
+        "lastChange",
+        "hasCustomDeliveryPlace",
+        "deliveryType",
+        "deliveryPlace",
+        "orderLine",
+        "comment",
         "totalPrice",
-        "besteldStuks",
-        "besteldGram",
-        "comment"
+        "route",
+        // New
+        "status",
+        "deliveryPlaceUri",
+        "routeUri",
+        "deliveryAddress",
+        "companyInfo",
+        "userAddress",
       ];
 
       res
