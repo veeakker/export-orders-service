@@ -278,7 +278,7 @@ async function basketOrderLines( basket, graph ) {
         ?offering gr:includesObject ?typeAndQuantity.
         ?priceSpecification gr:hasCurrencyValue ?totalPrice.
         ?typeAndQuantity gr:typeOfGood ?product.
-        OPTIONAL { ?product adms:identifier ?plu. }
+        OPTIONAL { ?product veeakker:plu ?plu. }
 
         OPTIONAL {
           ?typeAndQuantity
