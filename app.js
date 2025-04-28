@@ -1,6 +1,7 @@
 import { app, query, errorHandler, sparqlEscapeDateTime, sparqlEscapeUri } from 'mu';
 import { isAdminUser } from './lib/authorization'
-import queryAnswerAsCsv, { bindingsAndHeadersAsCsv } from './lib/query-answer-as-csv';
+import from './lib/query-answer-as-csv';
+import queryAnswerAsCsv from "./lib/queryAnswerAsCsv";
 import joinResults from './lib/join-results';
 
 function reqDates(req) {
